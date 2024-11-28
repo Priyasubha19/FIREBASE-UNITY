@@ -1,0 +1,87 @@
+using UnityEngine;
+using Firebase;
+using Firebase.Database;
+using Firebase.Extensions;
+
+public class Manual_Y : MonoBehaviour
+{
+    private DatabaseReference databaseReference;
+    private Vector3[] initialPositions;
+    private Vector3[] targetPositions;
+    public float smoothTime = 0.1f; // Adjust the time it takes to reach the target position
+
+    public GameObject[] objectsToMove;
+
+    void Start()
+    {
+        initialPositions = new Vector3[objectsToMove.Length];
+        targetPositions = new Vector3[objectsToMove.Length];
+
+        // Store initial positions and set initial target positions
+        for (int i = 0; i < objectsToMove.Length; i++)
+        {
+            initialPositions[i] = objectsToMove[i].transform.position;
+            targetPositions[i] = initialPositions[i];
+        }
+
+        // Initialize Firebase
+        FirebaseApp.CheckAndFixDependenciesAsync().ContinueWithOnMainThread(task => {
+            if (task.IsCompleted)
+            {
+                FirebaseApp app = FirebaseApp.DefaultInstance;
+                databaseReference = FirebaseDatabase.DefaultInstance.RootReference;
+
+                // Start listening for changes in the Firebase database
+                databaseReference.Child("status").ValueChanged += HandleValueChanged;
+            }
+            else
+            {
+                Debug.LogError("Could not resolve all Firebase dependencies: " + task.Exception);
+            }
+        });
+    }
+
+    void Update()
+    {
+        if (databaseReference != null)
+        {
+            // Fetch the y_pos values from Firebase under the "status" node
+            databaseReference.Child("status").GetValueAsync().ContinueWithOnMainThread(task =>
+            {
+                if (task.IsCompleted && !task.IsFaulted)
+                {
+                    DataSnapshot snapshot = task.Result;
+
+                    if (snapshot.Exists && snapshot.Child("y_pos").Exists)
+                    {
+                        float yPosValue = float.Parse(snapshot.Child("y_pos").Value.ToString());
+
+                        // Convert positive yPosValue to negative
+                        if (yPosValue > 0)
+                        {
+                            yPosValue = -yPosValue;
+                            Debug.Log("Converted positive y_pos value to negative: " + yPosValue);
+                        }
+
+                        // Update target positions based on y_pos value
+                        for (int i = 0; i < objectsToMove.Length; i++)
+                        {
+                            targetPositions[i] = initialPositions[i];
+                            targetPositions[i].y = initialPositions[i].y + yPosValue; // Subtract yPosValue to move downwards
+                        }
+                    }
+                }
+            });
+        }
+        // Smoothly move each object towards its target position
+        for (int i = 0; i < objectsToMove.Length; i++)
+        {
+            objectsToMove[i].transform.position = Vector3.Lerp(objectsToMove[i].transform.position, targetPositions[i], smoothTime * Time.deltaTime);
+        }
+    }
+
+    void HandleValueChanged(object sender, ValueChangedEventArgs args)
+    {
+        // Handle additional logic for real-time updates if needed
+    }
+}
